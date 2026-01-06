@@ -1,0 +1,230 @@
+from flask import Flask, render_template, request, jsonify, session
+import os
+from dotenv import load_dotenv
+import pandas as pd
+import sqlite3
+
+load_dotenv()
+from datetime import datetime
+import google.generativeai as genai
+import json
+from db_manager import list_databases, create_database, list_tables, execute_sql, replace_table
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
+
+# Configure Gemini
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+if not GOOGLE_API_KEY:
+    # Fallback for dev if not set, though it should be
+    print("Warning: GOOGLE_API_KEY not set.")
+
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+
+# Model configuration
+generation_config = {
+    "temperature": 0.2, # Lower temperature for more deterministic SQL
+    "top_p": 0.95,
+    "top_k": 40,
+    "max_output_tokens": 8192,
+}
+
+model = genai.GenerativeModel(
+    model_name="gemini-2.0-flash-exp",
+    generation_config=generation_config,
+    system_instruction="""You are an expert Data Analyst and SQL wizard. 
+    Your goal is to help users analyze their data stored in SQLite databases.
+    
+    When a user asks a question:
+    1. If it requires data, generate a valid SQLite SQL query to answer it. 
+       Return ONLY the SQL query in a code block like ```sql ... ```.
+       Assume the table names are available in the context or generic.
+    2. If the user provides data results, interpret them and give a concise, insightful answer.
+    
+    Always be helpful, professional, and concise.
+    """
+)
+
+@app.route('/')
+def index():
+            # Get first row to infer columns/types
+            res = execute_sql(db_name, f"SELECT * FROM \"{table}\" LIMIT 1")
+            if 'columns' in res:
+                schema_info[table] = res['columns']
+        
+        prompt = f"""
+        Analyze this database schema: {json.dumps(schema_info)}
+        
+        Provide a summary of what this data represents and suggest 3 interesting questions the user could ask.
+        Return as JSON:
+        {{
+            "summary": "...",
+            "suggested_questions": ["Q1", "Q2", "Q3"]
+        }}
+        """
+        
+        response = model.generate_content(prompt)
+        clean_text = response.text.replace('```json', '').replace('```', '').strip()
+        return jsonify(json.loads(clean_text))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/preview/<db_name>/<table_name>', methods=['GET'])
+def preview_table(db_name, table_name):
+    try:
+        # Get schema info (columns)
+        res = execute_sql(db_name, f"PRAGMA table_info(\"{table_name}\")")
+        columns = []
+        if 'rows' in res:
+            columns = [r['name'] for r in res['rows']]
+            
+        # Get data
+        data_res = execute_sql(db_name, f"SELECT * FROM \"{table_name}\" LIMIT 100")
+        
+        return jsonify({
+            "columns": columns,
+            "rows": data_res.get('rows', [])
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/upload_csv', methods=['POST'])
+def upload_csv():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        db_name = request.form.get('db_name', 'default')
+        table_name = request.form.get('table_name', file.filename.split('.')[0])
+        
+        # Try to read CSV with error handling
+        try:
+            # First attempt: standard read
+            df = pd.read_csv(file)
+        except pd.errors.ParserError as pe:
+            # Reset file pointer
+            file.seek(0)
+            try:
+                # Second attempt: skip bad lines
+                df = pd.read_csv(file, on_bad_lines='skip')
+                print(f"Warning: Skipped some malformed lines in {file.filename}")
+            except Exception:
+                # Third attempt: with error_bad_lines=False for older pandas
+                file.seek(0)
+                try:
+                    df = pd.read_csv(file, error_bad_lines=False)
+                except Exception:
+                    return jsonify({
+                        'error': 'CSV parsing failed. The file has inconsistent columns or malformed data. Try cleaning your CSV file first.',
+                        'details': str(pe)
+                    }), 400
+        except UnicodeDecodeError:
+            # Try different encoding
+            file.seek(0)
+            try:
+                df = pd.read_csv(file, encoding='latin1')
+            except Exception as e:
+                return jsonify({'error': f'Encoding error: {str(e)}'}), 400
+        
+        # Clean column names (remove leading/trailing spaces)
+        df.columns = df.columns.str.strip()
+        
+        # Remove completely empty rows
+        df = df.dropna(how='all')
+        
+        # Convert to list of dicts for db_manager
+        columns = list(df.columns)
+        rows = df.to_dict('records')
+        
+        # Save to DB
+        create_database(db_name) # Ensure DB exists
+        res = replace_table(db_name, table_name, columns, rows)
+        
+        if 'error' in res:
+            return jsonify({'error': res['error']}), 500
+        
+        return jsonify({
+            'status': 'success', 
+            'rows': len(rows), 
+            'columns': len(columns),
+            'table': table_name,
+            'message': f'Successfully uploaded {len(rows)} rows with {len(columns)} columns'
+        })
+    except Exception as e:
+        print(f"Upload error: {str(e)}")
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+
+@app.route('/api/analytics', methods=['GET'])
+def get_analytics():
+    # Mock analytics data for now, but structure it for the frontend
+    # In a real app, this would query the DB
+    return jsonify({
+        'revenue': [
+            { 'name': 'Jan', 'sales': 4000, 'leads': 2400 },
+            { 'name': 'Feb', 'sales': 3000, 'leads': 1398 },
+            { 'name': 'Mar', 'sales': 2000, 'leads': 9800 },
+            { 'name': 'Apr', 'sales': 2780, 'leads': 3908 },
+            { 'name': 'May', 'sales': 1890, 'leads': 4800 },
+            { 'name': 'Jun', 'sales': 2390, 'leads': 3800 },
+        ],
+        'stats': {
+            'total_queries': 14500,
+            'active_sessions': 1, # Single agent focus
+            'processing_speed': '85ms'
+        }
+    })
+
+# --- Database management API (Existing) ---
+@app.route('/api/databases', methods=['GET'])
+def api_list_databases():
+    try:
+        dbs = list_databases()
+        return jsonify({'databases': dbs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/databases', methods=['POST'])
+def api_create_database():
+    body = request.json or {}
+    name = body.get('name')
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    res = create_database(name)
+    if res == 'exists':
+        return jsonify({'status': 'exists'})
+    return jsonify({'status': 'created'})
+
+@app.route('/api/databases/<db_name>/tables', methods=['GET'])
+def api_list_tables(db_name):
+    try:
+        tables = list_tables(db_name)
+        return jsonify({'tables': tables})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/databases/<db_name>/query', methods=['POST'])
+def api_query(db_name):
+    body = request.json or {}
+    sql = body.get('sql')
+    if not sql:
+        return jsonify({'error': 'sql required'}), 400
+    res = execute_sql(db_name, sql)
+    return jsonify(res)
+
+@app.route('/api/databases/<db_name>/tables/<table_name>/rows', methods=['GET'])
+def api_table_rows(db_name, table_name):
+    sql = f"SELECT * FROM \"{table_name}\" LIMIT 1000;"
+    res = execute_sql(db_name, sql)
+    return jsonify(res)
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok', 'timestamp': datetime.now().isoformat()})
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)

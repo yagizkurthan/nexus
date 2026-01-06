@@ -1,0 +1,23 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.DS_Store
+!sales_data.csv
+*.csv
+*.xlsx
+
+# Data and State
+*.db
+*.sqlite
+databases/
+memory.json
+debug_log.txt
