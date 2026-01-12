@@ -25,13 +25,13 @@ const DataSources = ({ onNavigate }) => {
         return {
           id: name,
           name: displayName,
-          type: 'CSV Upload',
+          type: 'File Upload',
           status: 'Connected',
           lastSync: 'Just now'
         };
       });
       setDatabases(dbs);
-      
+
       // Auto-select first database if none selected
       if (!activeDb && dbs.length > 0) {
         handleSetActive(dbs[0].name);
@@ -54,17 +54,17 @@ const DataSources = ({ onNavigate }) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.csv')) {
-      toast.error('Please upload a CSV file');
+    if (!file.name.endsWith('.csv') && !file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      toast.error('Please upload a CSV or Excel file');
       return;
     }
 
     // Use the CSV filename (without extension) as the database name
-    const dbName = file.name.replace('.csv', '');
-    
+    const dbName = file.name.split('.')[0];
+
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('db_name', dbName); // Use CSV filename as database name
+    formData.append('db_name', dbName);
     formData.append('table_name', 'data'); // Standard table name
 
     const uploadToast = toast.loading(`Uploading ${file.name}...`);
@@ -74,15 +74,15 @@ const DataSources = ({ onNavigate }) => {
       const response = await axios.post('/api/upload_csv', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      
+
       // Refresh database list
       await fetchDatabases();
-      
+
       const { rows, columns, table, message } = response.data;
-      
+
       // Auto-select uploaded database
       handleSetActive(dbName);
-      
+
       toast.success(
         <div className="text-sm">
           <div className="font-semibold flex items-center gap-2">
@@ -101,7 +101,7 @@ const DataSources = ({ onNavigate }) => {
     } catch (error) {
       console.error("Upload failed", error);
       const errorMsg = error.response?.data?.error || error.message;
-      
+
       toast.error(
         <div className="text-sm">
           <div className="font-semibold flex items-center gap-2">
@@ -122,7 +122,7 @@ const DataSources = ({ onNavigate }) => {
 
   return (
     <div className="space-y-6">
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           style: {
@@ -140,7 +140,7 @@ const DataSources = ({ onNavigate }) => {
           }
         }}
       />
-      
+
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-white">Data Sources</h2>
@@ -153,15 +153,15 @@ const DataSources = ({ onNavigate }) => {
           )}
         </div>
         <div className="flex gap-3">
-          <input 
-            type="file" 
+          <input
+            type="file"
             ref={fileInputRef}
             onChange={handleFileUpload}
-            accept=".csv"
+            accept=".csv, .xlsx, .xls"
             className="hidden"
             disabled={uploading}
           />
-          <button 
+          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -174,7 +174,7 @@ const DataSources = ({ onNavigate }) => {
             ) : (
               <>
                 <Upload className="w-4 h-4" />
-                Upload CSV
+                Upload Data
               </>
             )}
           </button>
@@ -189,14 +189,14 @@ const DataSources = ({ onNavigate }) => {
         <div className="p-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
           <div className="relative max-w-xs w-full">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Search sources..." 
+            <input
+              type="text"
+              placeholder="Search sources..."
               className="w-full bg-black/20 border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
             />
           </div>
-          <button 
-            onClick={fetchDatabases} 
+          <button
+            onClick={fetchDatabases}
             disabled={loading}
             className="p-2 text-gray-400 hover:text-white transition-colors disabled:opacity-50"
           >
@@ -218,24 +218,22 @@ const DataSources = ({ onNavigate }) => {
             {databases.length === 0 ? (
               <tr>
                 <td colSpan="5" className="p-8 text-center text-gray-500">
-                  {loading ? 'Loading databases...' : 'No data sources connected. Upload a CSV to get started.'}
+                  {loading ? 'Loading databases...' : 'No data sources connected. Upload a CSV or Excel file to get started.'}
                 </td>
               </tr>
             ) : (
               databases.map((db) => (
-                <tr 
-                  key={db.id} 
-                  className={`group hover:bg-white/5 transition-colors ${
-                    activeDb === db.name ? 'bg-blue-500/10' : ''
-                  }`}
+                <tr
+                  key={db.id}
+                  className={`group hover:bg-white/5 transition-colors ${activeDb === db.name ? 'bg-blue-500/10' : ''
+                    }`}
                 >
                   <td className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${
-                        activeDb === db.name 
-                          ? 'bg-blue-500/30 text-blue-300' 
+                      <div className={`p-2 rounded-lg ${activeDb === db.name
+                          ? 'bg-blue-500/30 text-blue-300'
                           : 'bg-blue-500/20 text-blue-400'
-                      }`}>
+                        }`}>
                         <Database className="w-4 h-4" />
                       </div>
                       <div>
@@ -268,7 +266,7 @@ const DataSources = ({ onNavigate }) => {
                           Set Active
                         </button>
                       )}
-                      <button 
+                      <button
                         onClick={() => onNavigate && onNavigate('data-explorer')}
                         className="p-2 text-gray-400 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
                         title="Inspect Data"

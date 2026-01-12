@@ -538,32 +538,39 @@ def upload_csv():
         db_name = request.form.get('db_name', 'default')
         table_name = request.form.get('table_name', file.filename.split('.')[0])
         
-        # Try to read CSV with error handling
+        # Try to read file based on extension
         try:
-            df = pd.read_csv(file)
-        except pd.errors.ParserError as pe:
-            file.seek(0)
-            try:
-                df = pd.read_csv(file, on_bad_lines='skip')
-                print(f"Warning: Skipped some malformed lines in {file.filename}")
-            except Exception:
-                file.seek(0)
+            if file.filename.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file)
+            else:
+                # CSV handling
                 try:
-                    df = pd.read_csv(file, error_bad_lines=False)
-                except Exception:
-                    return jsonify({
-                        'error': 'CSV parsing failed. The file has inconsistent columns or malformed data.',
-                        'details': str(pe)
-                    }), 400
-        except UnicodeDecodeError:
-            file.seek(0)
-            try:
-                df = pd.read_csv(file, encoding='latin1')
-            except Exception as e:
-                return jsonify({'error': f'Encoding error: {str(e)}'}), 400
+                    df = pd.read_csv(file)
+                except pd.errors.ParserError as pe:
+                    file.seek(0)
+                    try:
+                        df = pd.read_csv(file, on_bad_lines='skip')
+                        print(f"Warning: Skipped some malformed lines in {file.filename}")
+                    except Exception:
+                        file.seek(0)
+                        try:
+                            df = pd.read_csv(file, error_bad_lines=False)
+                        except Exception:
+                            return jsonify({
+                                'error': 'CSV parsing failed. The file has inconsistent columns or malformed data.',
+                                'details': str(pe)
+                            }), 400
+                except UnicodeDecodeError:
+                    file.seek(0)
+                    try:
+                        df = pd.read_csv(file, encoding='latin1')
+                    except Exception as e:
+                        return jsonify({'error': f'Encoding error: {str(e)}'}), 400
+        except Exception as e:
+            return jsonify({'error': f'Failed to parse file: {str(e)}'}), 400
         
         # Clean column names
-        df.columns = df.columns.str.strip()
+        df.columns = df.columns.astype(str).str.strip()
         df = df.dropna(how='all')
         
         # Convert to list of dicts
