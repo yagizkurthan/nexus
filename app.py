@@ -805,6 +805,40 @@ def optimize_db(db_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/databases/<db_name>', methods=['DELETE'])
+def api_delete_database(db_name):
+    """Delete an entire database"""
+    from db_manager import delete_database
+    try:
+        result = delete_database(db_name)
+        if 'error' in result:
+            return jsonify(result), 404 if result['error'] == 'db_not_found' else 500
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/databases/<db_name>/tables/<table_name>', methods=['DELETE'])
+def api_delete_table(db_name, table_name):
+    """Delete a table from a database"""
+    from db_manager import delete_table
+    try:
+        result = delete_table(db_name, table_name)
+        if 'error' in result:
+            return jsonify(result), 404 if result['error'] == 'db_not_found' else 500
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/clear_memory', methods=['DELETE'])
+def api_clear_memory():
+    """Clear all memory entries (neural memory reset)"""
+    try:
+        rag.memory = []
+        rag._save_memory()
+        return jsonify({'status': 'cleared', 'message': 'All memories cleared'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)

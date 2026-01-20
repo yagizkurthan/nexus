@@ -138,3 +138,43 @@ def create_index(db_name: str, table_name: str, column_name: str) -> Dict[str, A
         return {"error": str(e)}
     finally:
         conn.close()
+
+
+def delete_database(db_name: str) -> Dict[str, Any]:
+    """Delete an entire database file."""
+    path = db_path(db_name)
+    if not os.path.exists(path):
+        return {"error": "db_not_found"}
+    try:
+        os.remove(path)
+        # Also remove WAL and SHM files if they exist
+        wal_path = path + "-wal"
+        shm_path = path + "-shm"
+        if os.path.exists(wal_path):
+            os.remove(wal_path)
+        if os.path.exists(shm_path):
+            os.remove(shm_path)
+        return {"status": "deleted", "database": db_name}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def delete_table(db_name: str, table_name: str) -> Dict[str, Any]:
+    """Delete a table from a database."""
+    path = db_path(db_name)
+    if not os.path.exists(path):
+        return {"error": "db_not_found"}
+    conn = sqlite3.connect(path)
+    try:
+        # Sanitize table name
+        tbl = ''.join(c for c in table_name if c.isalnum() or c == '_')
+        if not tbl:
+            return {"error": "invalid_table_name"}
+        
+        conn.execute(f"DROP TABLE IF EXISTS \"{tbl}\"")
+        conn.commit()
+        return {"status": "deleted", "table": table_name}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        conn.close()

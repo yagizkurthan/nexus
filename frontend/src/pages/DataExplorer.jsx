@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Database, Table, Search, ChevronRight, Loader, Download, X, ArrowUpDown, ArrowUp, ArrowDown, FileText, Hash, Calendar, PanelLeftClose, PanelLeft } from "lucide-react";
+import { Database, Table, Search, ChevronRight, Loader, Download, X, ArrowUpDown, ArrowUp, ArrowDown, FileText, Hash, Calendar, PanelLeftClose, PanelLeft, Trash2 } from "lucide-react";
 import Card from "../components/ui/Card";
 import axios from 'axios';
 
@@ -117,10 +117,31 @@ const DataExplorer = () => {
 
   const handleTableSelect = async (table) => {
     setSelectedTable(table);
+    setSearchTerm(""); // Reset search term when selecting a new table
     setPage(1); // Reset to first page
     setSortBy(null);
     setSortOrder('asc');
     fetchTableData(table, 1, null, 'asc');
+  };
+
+  const handleDeleteTable = async (tableName, e) => {
+    e.stopPropagation(); // Prevent table selection
+    const confirmed = window.confirm(`Delete table "${tableName}"?\n\nThis action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      await axios.delete(`/api/databases/${selectedDb}/tables/${tableName}`);
+      // Refresh tables list
+      const res = await axios.get(`/api/databases/${selectedDb}/tables`);
+      setTables(res.data.tables || []);
+      if (selectedTable === tableName) {
+        setSelectedTable(null);
+        setTableData({ columns: [], rows: [] });
+      }
+    } catch (error) {
+      console.error("Failed to delete table", error);
+      alert(`Failed to delete: ${error.response?.data?.error || error.message}`);
+    }
   };
 
   const fetchTableData = async (table, pageNum, sort = sortBy, order = sortOrder) => {
@@ -163,22 +184,48 @@ const DataExplorer = () => {
     fetchTableData(selectedTable, 1, column, newOrder);
   };
 
-  const handleExport = () => {
+  const handleExportCSV = () => {
     if (!filteredRows.length) return;
     
     // Create CSV content
     const headers = tableData.columns.join(',');
     const rows = filteredRows.map(row => 
-      tableData.columns.map(col => `"${row[col] || ''}"`).join(',')
+      tableData.columns.map(col => `"${String(row[col] || '').replace(/"/g, '""')}"`).join(',')
     );
     const csv = [headers, ...rows].join('\n');
     
     // Download
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${selectedTable}_export.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = () => {
+    if (!filteredRows.length) return;
+    
+    // Create HTML table for Excel
+    let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table border="1">';
+    
+    // Headers
+    html += '<tr>' + tableData.columns.map(col => `<th style="background:#4a5568;color:white;font-weight:bold;">${col}</th>`).join('') + '</tr>';
+    
+    // Rows
+    filteredRows.forEach(row => {
+      html += '<tr>' + tableData.columns.map(col => `<td>${row[col] || ''}</td>`).join('') + '</tr>';
+    });
+    
+    html += '</table></body></html>';
+    
+    // Download
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedTable}_export.xls`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -227,16 +274,24 @@ const DataExplorer = () => {
                 {selectedDb === db && (
                   <div className="pl-4 space-y-1 mt-1 border-l border-white/10 ml-3">
                     {tables.map((table) => (
-                      <button
-                        key={table}
-                        onClick={() => handleTableSelect(table)}
-                        className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                          selectedTable === table ? 'bg-purple-500/20 text-purple-400 border border-purple-500/20' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                        }`}
-                      >
-                        <Table className="w-3 h-3" />
-                        <span className="truncate">{table}</span>
-                      </button>
+                      <div key={table} className="group/table flex items-center">
+                        <button
+                          onClick={() => handleTableSelect(table)}
+                          className={`flex-1 text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                            selectedTable === table ? 'bg-purple-500/20 text-purple-400 border border-purple-500/20' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                          }`}
+                        >
+                          <Table className="w-3 h-3" />
+                          <span className="truncate">{table}</span>
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteTable(table, e)}
+                          className="p-1 text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover/table:opacity-100"
+                          title={`Delete ${table}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -296,7 +351,7 @@ const DataExplorer = () => {
                   
                   {/* Export Button */}
                   <button 
-                    onClick={handleExport}
+                    onClick={handleExportCSV}
                     disabled={!filteredRows.length}
                     className="flex items-center gap-2 px-4 py-2 bg-green-600/10 hover:bg-green-600/20 text-green-400 rounded-xl text-sm font-medium transition-colors border border-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >

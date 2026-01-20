@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Database, Plus, RefreshCw, Upload, Search, Eye, CheckCircle2, AlertCircle, Check } from "lucide-react";
+import { Database, Plus, RefreshCw, Upload, Search, Eye, CheckCircle2, AlertCircle, Check, Trash2 } from "lucide-react";
 import Card from "../components/ui/Card";
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
@@ -48,6 +48,29 @@ const DataSources = ({ onNavigate }) => {
     setActiveDb(dbName);
     localStorage.setItem('activeDatabase', dbName);
     toast.success(`Using "${dbName}" for agent queries`);
+  };
+
+  const handleDeleteDatabase = async (dbId, dbName) => {
+    // Confirmation dialog
+    const confirmed = window.confirm(`Are you sure you want to delete "${dbName}"?\n\nThis action cannot be undone.`);
+    if (!confirmed) return;
+
+    const deleteToast = toast.loading(`Deleting ${dbName}...`);
+    try {
+      await axios.delete(`/api/databases/${dbId}`);
+      
+      // Clear active if deleted
+      if (activeDb === dbName) {
+        setActiveDb(null);
+        localStorage.removeItem('activeDatabase');
+      }
+      
+      await fetchDatabases();
+      toast.success(`"${dbName}" deleted successfully`, { id: deleteToast });
+    } catch (error) {
+      console.error("Delete failed", error);
+      toast.error(`Failed to delete: ${error.response?.data?.error || error.message}`, { id: deleteToast });
+    }
   };
 
   const handleFileUpload = async (event) => {
@@ -272,6 +295,13 @@ const DataSources = ({ onNavigate }) => {
                         title="Inspect Data"
                       >
                         <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDatabase(db.id, db.name)}
+                        className="p-2 text-gray-400 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Delete Database"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
