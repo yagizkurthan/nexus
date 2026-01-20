@@ -67,7 +67,7 @@ const QueryTemplates = ({ onSelectTemplate }) => {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-80 bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
+        <div className="absolute top-full right-0 mt-2 w-80 bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
           {/* Tabs */}
           <div className="flex border-b border-white/10">
             <button
