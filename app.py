@@ -20,12 +20,46 @@ CORS(app) # Enable CORS for all routes
 app.secret_key = os.urandom(24)
 
 # Configure Gemini
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-if not GOOGLE_API_KEY:
-    print("Warning: GOOGLE_API_KEY not set.")
+# Configure Gemini with Multi-Key Support
+API_KEYS = []
+main_key = os.getenv('GOOGLE_API_KEY')
+if main_key:
+    API_KEYS.append(main_key)
 
-if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
+# Load additional keys (GOOGLE_API_KEY_2, _3, etc.)
+for i in range(2, 10):
+    key = os.getenv(f'GOOGLE_API_KEY_{i}')
+    if key:
+        API_KEYS.append(key)
+
+if not API_KEYS:
+    print("Warning: No GOOGLE_API_KEYs found.")
+else:
+    print(f"Loaded {len(API_KEYS)} API keys.")
+
+current_key_index = 0
+
+def configure_genai(key_index=None):
+    global current_key_index
+    if not API_KEYS:
+        return
+    
+    if key_index is not None:
+        target_index = key_index % len(API_KEYS)
+    else:
+        target_index = current_key_index
+        
+    current_key_index = target_index
+    genai.configure(api_key=API_KEYS[current_key_index])
+    print(f"Configured Gemini with API Key #{current_key_index + 1}")
+
+def rotate_key():
+    global current_key_index
+    current_key_index = (current_key_index + 1) % len(API_KEYS)
+    configure_genai(current_key_index)
+
+# Initial Configuration
+configure_genai(0)
 
 # Model configuration
 # Model configuration
@@ -59,42 +93,21 @@ Do not ask the user for data if you can query it yourself.
 *   **Date Grouping**: `SELECT strftime('%Y-%m', created_at) as month, COUNT(*) FROM orders GROUP BY month;`
 *   **Safe Updates**: Always `SELECT` before `DELETE` or `UPDATE` to verify target rows if unsure.
 
-### FEW-SHOT EXAMPLES
+### FEW-SHOT EXAMPLES (Generic)
 
-**User**: "Show me the top selling products."
+**User**: "Show me the top items."
 **Nexus**:
-*Thought*: I need to find a table with products and sales. I'll check the tables first.
+*Thought*: I need to check the tables first.
 ```sql
 SELECT name FROM sqlite_master WHERE type='table';
 ```
 
-**(System returns: `['products', 'sales']`)**
+**(System returns: `['table_a', 'table_b']`)**
 
 **Nexus**:
-*Thought*: Okay, I see `products` and `sales`. I need to check their columns to join them.
+*Thought*: I see the tables. I'll check columns.
 ```sql
-PRAGMA table_info(products);
-PRAGMA table_info(sales);
-```
-
-**(System returns columns)**
-
-**Nexus**:
-*Thought*: `sales` has `product_id` and `quantity`. `products` has `id` and `name`. I will join them and sum quantity.
-```sql
-SELECT p.name, SUM(s.quantity) as total_sold 
-FROM sales s 
-JOIN products p ON s.product_id = p.id 
-GROUP BY p.name 
-ORDER BY total_sold DESC 
-LIMIT 5;
-```
-
-**User**: "Delete the user 'John Doe'."
-**Nexus**:
-*Thought*: I should verify which 'John Doe' to delete to avoid accidents.
-```sql
-SELECT * FROM users WHERE name LIKE 'John Doe%';
+PRAGMA table_info(table_a);
 ```
 
 ### RESPONSE STYLE
@@ -136,8 +149,9 @@ def try_generate_content(prompt, preferred_model="gemini-2.0-flash-exp", history
     
     # Fallback chain
     fallback_chain = [
+        "gemini-2.0-flash-exp",
         "gemini-2.0-flash-lite-preview-02-05", 
-        "gemini-flash-latest"
+        "gemini-2.0-pro-exp-02-05"
     ]
     
     # Add fallbacks
@@ -164,12 +178,14 @@ def try_generate_content(prompt, preferred_model="gemini-2.0-flash-exp", history
         except Exception as e:
             print(f"Error with {model_name}: {type(e).__name__} - {e}")
             error_str = str(e).lower()
-            if "429" in error_str or "quota" in error_str or "resource exhausted" in error_str or "overloaded" in error_str or "not found" in error_str or "404" in error_str:
+            is_quota_error = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str or "overloaded" in error_str
+            is_auth_error = "400" in error_str or "key" in error_str or "invalid" in error_str or "expired" in error_str
+            
+            if is_quota_error or is_auth_error:
                 last_error = e
-                # Exponential backoff: 2, 4, 8 seconds
-                sleep_time = 2 ** (i + 1)
-                print(f"Rate limit hit. Sleeping for {sleep_time}s before trying next model...")
-                time.sleep(sleep_time)
+                print(f"API Error detected. Rotating key...")
+                rotate_key()
+                time.sleep(1)
                 continue 
             else:
                 raise e 
@@ -207,7 +223,7 @@ def submit_feedback():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST'])
 def chat():
     try:
         user_message = request.json.get('message', '')
@@ -233,15 +249,34 @@ def chat():
             session['chat_history'] = []
         
         # Construct System Prompt (Nexus Persona)
+        # Get actual schema context
+        try:
+            tables = list_tables(database_name)
+            schema_summary = f"Tables in '{database_name}': {', '.join(tables)}\n"
+            for table in tables:
+                # Get columns for each table
+                res = execute_sql(database_name, f"PRAGMA table_info(\"{table}\")")
+                if 'rows' in res:
+                    cols = [r['name'] for r in res['rows']]
+                    schema_summary += f"- Table '{table}': {', '.join(cols)}\n"
+        except Exception as e:
+            print(f"Schema fetch error: {e}")
+            schema_summary = "Could not fetch schema automatically. Use list_tables() to find out."
+
+        # Construct System Prompt (Nexus Persona)
         system_instruction = f"""
         You are Nexus, an elite AI Data Analyst and Database Architect.
         Your mission is to empower users with deep insights, precise data manipulation, and automated reporting.
         
-        You have access to a SQLite database named '{database_name}'.
+        ### CURRENT DATABASE CONTEXT
+        You are connected to the SQLite database: '{database_name}'
+        
+        ### ACTUAL DATABASE SCHEMA (Do not hallucinate others)
+        {schema_summary}
         
         ### OPERATIONAL PROTOCOL
         1.  **Analyze**: Understand the user's intent.
-        2.  **Explore**: Use `list_tables` if you don't know the schema. NEVER GUESS.
+        2.  **Explore**: The schema is provided above. USE IT. Do not assume tables exist.
         3.  **Plan**: Formulate the correct SQLite query.
         4.  **Execute**: Use `run_sql`.
         5.  **Synthesize**: Interpret the results.
@@ -264,14 +299,23 @@ def chat():
 
         # --- Tool Execution Loop with Retry ---
         
-        max_retries = 3
-        retry_delay = 2
+        models_list = [
+            "gemini-2.0-flash-exp", 
+            "gemini-2.0-flash-lite-preview-02-05",
+            "gemini-2.0-pro-exp-02-05"
+        ]
+        max_total_attempts = 20 # 5 models * 4 keys
+        attempt = 0
+        last_error = None
         
-        for attempt in range(max_retries):
+        while attempt < max_total_attempts:
+            model_name = models_list[attempt % len(models_list)]
+            print(f"Attempt {attempt + 1}/{max_total_attempts}: Trying model {model_name} with Key #{current_key_index + 1}")
+            
             try:
                 # 1. Initialize Chat with Tools
                 model = genai.GenerativeModel(
-                    model_name=preferred_model,
+                    model_name=model_name,
                     tools=[sql_tools],
                     system_instruction=system_instruction
                 )
@@ -343,16 +387,26 @@ def chat():
                 break
                 
             except Exception as e:
-                print(f"Attempt {attempt+1} failed: {e}")
-                if "429" in str(e) or "quota" in str(e).lower():
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                        # Optional: Switch model on last retry
-                        if attempt == max_retries - 2:
-                            preferred_model = 'gemini-flash-latest'
-                        continue
-                raise e # Re-raise if not a quota error or out of retries
+                print(f"Error with {model_name}: {e}")
+                error_str = str(e).lower()
+                is_quota_error = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str
+                is_not_found = "404" in error_str or "not found" in error_str
+                
+                if is_quota_error or is_auth_error or is_not_found:
+                    print(f"API Error ({error_str}) for {model_name}. Rotating/Skipping...")
+                    if not is_not_found:
+                         rotate_key()
+                    
+                    import time
+                    time.sleep(1) 
+                    last_error = e
+                    attempt += 1
+                    continue
+                else:
+                    raise e
+        
+        if last_error:
+            raise last_error
         
         # --- End Loop ---
 
@@ -389,9 +443,10 @@ def chat():
             f.write(f"\n{'='*50}\nTIME: {time.ctime()}\nERROR: {error_msg}\nTRACEBACK:\n{tb}\n{'='*50}\n")
             
         # Fallback to simple text if tool loop fails
+        # Fallback to simple text if tool loop fails
         return jsonify({
             "thought_process": ["Error with tools, falling back."],
-            "response": f"I encountered an error: {error_msg}",
+            "response": f"I encountered an error processing your request: {error_msg}. Please check the server logs for more details.",
             "sql": None
         }), 500
 

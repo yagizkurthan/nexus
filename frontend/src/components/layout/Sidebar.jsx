@@ -5,11 +5,12 @@ import {
   Database, 
   BarChart2, 
   Settings, 
-  LogOut,
   Sparkles,
   History,
-  Search
+  Search,
+  Command
 } from "lucide-react";
+import NotificationCenter from "../NotificationCenter";
 
 const Sidebar = () => {
   const location = useLocation();
@@ -36,6 +37,22 @@ const Sidebar = () => {
           <p className="text-xs text-blue-400 font-medium">AI Analytics</p>
         </div>
       </div>
+
+      {/* Quick Search Hint */}
+      <button
+        onClick={() => {
+          // Trigger Cmd+K
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+        }}
+        className="mb-4 flex items-center gap-2 px-3 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-gray-400 hover:text-white transition-colors group"
+      >
+        <Search className="w-4 h-4" />
+        <span className="text-sm flex-1 text-left">Quick Search...</span>
+        <div className="flex items-center gap-0.5 text-xs opacity-60 group-hover:opacity-100">
+          <Command className="w-3 h-3" />
+          <span>K</span>
+        </div>
+      </button>
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1">
@@ -72,7 +89,11 @@ const Sidebar = () => {
         })}
       </nav>
 
-      
+      {/* Bottom Actions */}
+      <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+        <NotificationCenter />
+        <div className="text-xs text-gray-600">v1.0</div>
+      </div>
     </div>
   );
 };

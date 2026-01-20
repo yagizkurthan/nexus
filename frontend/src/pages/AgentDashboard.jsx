@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Send, Sparkles, Terminal, ChevronDown, ChevronRight, Bot, Trash2, Lightbulb, Clock, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, LineChart, Line, YAxis } from 'recharts';
 import Card from "../components/ui/Card";
+import QueryTemplates from "../components/QueryTemplates";
 import axios from 'axios';
 
 const ThinkingProcess = ({ steps }) => {
@@ -71,7 +72,6 @@ const DynamicChart = ({ data, type = 'bar' }) => {
     </div>
     );
   } catch (e) {
-    console.error("Chart error:", e);
     return null;
   }
 };
@@ -81,12 +81,14 @@ const AgentDashboard = () => {
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('nexus_chat_history');
     return saved ? JSON.parse(saved) : [
-      { role: "agent", content: "Hello! I'm Nexus. I can analyze your data. Try uploading a CSV in Data Sources and ask me about it!" }
+      {
+        role: "system", 
+        content: "I am Nexus AI. I can analyze your database, run SQL queries, and visualize data. Ask me anything about your data."
+      }
     ];
   });
   const [loading, setLoading] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [suggestedQueries, setSuggestedQueries] = useState([
+  const [suggestedQueries] = useState([
     "Show me the top 5 rows",
     "Count the total number of records",
     "Analyze the distribution of data"
@@ -106,224 +108,218 @@ const AgentDashboard = () => {
     localStorage.setItem('nexus_chat_history', JSON.stringify(messages));
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!query.trim()) return;
+  const handleSend = async (forcedQuery = null) => {
+    const q = forcedQuery || query;
+    if (!q.trim()) return;
     
-    const userMsg = { role: "user", content: query };
+    // Save to recent queries
+    const recent = JSON.parse(localStorage.getItem('recentQueries') || '[]');
+    const newRecent = [{ query: q, timestamp: Date.now() }, ...recent.filter(r => r.query !== q)].slice(0, 10);
+    localStorage.setItem('recentQueries', JSON.stringify(newRecent));
+
+    const userMsg = { role: "user", content: q };
     setMessages(prev => [...prev, userMsg]);
     setQuery("");
     setLoading(true);
 
     try {
-      // Get active database from localStorage
-      const activeDatabase = localStorage.getItem('activeDatabase');
-      const preferredModel = localStorage.getItem('chatModel') || 'gemini-2.0-flash-exp';
-      
-      const res = await axios.post('/chat', {
-        message: query,
-        database: activeDatabase,
-        model: preferredModel
+      const activeDb = localStorage.getItem("activeDatabase");
+      const res = await axios.post('/api/chat', { 
+        message: q,
+        database: activeDb
       });
-      const data = res.data;
       
-      const agentMsg = { 
-        role: "agent", 
-        content: data.response,
-        sql: data.sql,
-        thought_process: data.thought_process,
-        actions: data.actions
+      const botMsg = { 
+        role: "assistant", 
+        content: res.data.response,
+        sql: res.data.sql,
+        data: res.data.data,
+        chartType: res.data.chartType,
+        thinkingProcess: res.data.thinking_process || []
       };
-      setMessages(prev => [...prev, agentMsg]);
+      
+      setMessages(prev => [...prev, botMsg]);
     } catch (error) {
       console.error("Chat error:", error);
-      let errorMsg = "Sorry, I encountered an error processing your request.";
-      if (error.response && error.response.status === 429) {
-        errorMsg = "I've reached my thinking limit for now. Please wait a moment and try again.";
+      let errorMessage = "Sorry, I encountered an error processing your request.";
+      if (error.response?.data?.error) {
+        errorMessage += ` (${error.response.data.error})`;
       }
-      setMessages(prev => [...prev, { role: "agent", content: errorMsg }]);
+      setMessages(prev => [...prev, { role: "assistant", content: errorMessage, error: true }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFeedback = async (msg, rating) => {
-    try {
-        // Optimistically update UI
-        setMessages(prev => prev.map(m => 
-            m === msg ? { ...m, rating } : m
-        ));
-
-        // Find the user query that prompted this response (the message before this one)
-        const msgIndex = messages.indexOf(msg);
-        if (msgIndex > 0) {
-            const userQuery = messages[msgIndex - 1].content;
-            
-            await axios.post('http://localhost:5000/api/feedback', {
-                query: userQuery,
-                sql: msg.sql,
-                rating: rating
-            });
-            
-            console.log("Feedback sent!");
-        }
-    } catch (error) {
-        console.error("Error sending feedback:", error);
-        // Revert on error (optional, but good practice)
-        setMessages(prev => prev.map(m => 
-            m === msg ? { ...m, rating: undefined } : m
-        ));
+  const handleClearHistory = () => {
+    if(window.confirm("Are you sure you want to clear the chat history?")) {
+      setMessages([{
+        role: "system", 
+        content: "History cleared. I am ready for new queries."
+      }]);
     }
   };
 
-  const handleSuggestedQuery = (suggestedQuery) => {
-    setQuery(suggestedQuery);
-  };
-
-  const clearChat = () => {
-    const initialMsg = [{ role: "agent", content: "Hello! I'm Nexus. I can analyze your data. Try uploading a CSV in Data Sources and ask me about it!" }];
-    setMessages(initialMsg);
-    localStorage.setItem('nexus_chat_history', JSON.stringify(initialMsg));
+  const handleTemplateSelect = (templateQuery) => {
+    setQuery(templateQuery);
+    // Optional: auto-send
+    // handleSend(templateQuery); 
   };
 
   return (
-    <div className="h-[calc(100vh-2rem)] flex flex-col gap-6">
+    <div className="h-[calc(100vh-2rem)] flex flex-col gap-6 relative">
       {/* Header */}
-      <div className="flex justify-between items-center px-2 shrink-0">
+      <div className="flex justify-between items-center shrink-0 z-10">
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Bot className="w-8 h-8 text-blue-400" />
+            <Bot className="w-6 h-6 text-blue-400" />
             Nexus Agent
           </h2>
-          <p className="text-gray-400 text-sm">AI-powered data analyst</p>
+          <p className="text-gray-400">Ask questions about your data in natural language</p>
         </div>
-        <button 
-          onClick={clearChat}
-          className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm transition-colors flex items-center gap-2"
-        >
-          <Trash2 className="w-4 h-4" />
-          Clear Chat
-        </button>
+        <div className="flex items-center gap-2">
+          <QueryTemplates onSelectTemplate={handleTemplateSelect} />
+          <button 
+            onClick={handleClearHistory}
+            className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+            title="Clear History"
+          >
+            <Trash2 className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 flex gap-4 min-h-0 relative">
-
-
-        {/* Main Chat Area */}
-        <Card className="flex-1 flex flex-col min-h-0 !p-0 overflow-hidden border-white/10 bg-black/20 backdrop-blur-sm shadow-2xl">
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin scrollbar-thumb-white/10">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-              <div className={`max-w-[85%] rounded-2xl px-6 py-5 ${
-                msg.role === 'user' 
-                  ? 'bg-blue-600 text-white rounded-br-none shadow-lg shadow-blue-900/20' 
-                  : 'bg-white/5 text-gray-200 border border-white/5 rounded-bl-none'
-              }`}>
-                {msg.thought_process && <ThinkingProcess steps={msg.thought_process} />}
-                
-                <p className="whitespace-pre-wrap leading-relaxed text-sm md:text-base">{msg.content}</p>
-                
-                {msg.actions && msg.actions.map((action, idx) => (
-                  action.type === 'render_chart' && (
-                    <DynamicChart key={idx} data={action.data.data} type={action.data.type} />
-                  )
-                ))}
+      {/* Chat Area */}
+      <div className="flex-1 overflow-y-auto pr-2 space-y-6 pb-4 min-h-0">
+        {messages.map((msg, idx) => (
+          <div 
+            key={idx} 
+            className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            {msg.role === 'assistant' && (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shrink-0 mt-1">
+                <Sparkles className="w-4 h-4 text-white" />
               </div>
-              
-              {/* SQL Preview (Collapsible) */}
-              {msg.sql && (
-                <div className="mt-2 max-w-[85%] w-full">
-                  <details className="group">
-                    <summary className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/5 rounded-lg text-xs text-gray-500 cursor-pointer hover:bg-white/10 transition-colors select-none w-fit">
-                      <Terminal className="w-3 h-3" />
-                      <span>View Generated SQL</span>
-                    </summary>
-                    <div className="mt-2 bg-black/40 rounded-lg border border-white/10 overflow-hidden">
-                      <pre className="p-3 text-xs text-green-400 font-mono overflow-x-auto whitespace-pre-wrap">
-                        {msg.sql}
-                      </pre>
+            )}
+            
+            <div className={`max-w-[85%] space-y-3 ${msg.role === 'user' ? 'items-end flex flex-col' : ''}`}>
+              <div 
+                className={`p-4 rounded-2xl ${
+                  msg.role === 'user' 
+                    ? 'bg-blue-600 text-white rounded-tr-sm' 
+                    : 'bg-white/5 border border-white/10 text-gray-100 rounded-tl-sm backdrop-blur-sm'
+                }`}
+              >
+                <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                
+                {msg.role === 'assistant' && !msg.error && (
+                  <div className="mt-4 space-y-4">
+                    {/* Thinking Process */}
+                    <ThinkingProcess steps={msg.thinkingProcess} />
+
+                    {/* SQL Code Block */}
+                    {msg.sql && (
+                      <div className="bg-black/40 rounded-lg overflow-hidden border border-white/5">
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/5">
+                          <span className="text-xs font-medium text-gray-400 flex items-center gap-1.5">
+                            <Terminal className="w-3 h-3" />
+                            Generated SQL
+                          </span>
+                        </div>
+                        <pre className="p-3 text-xs font-mono text-blue-300 overflow-x-auto custom-scrollbar">
+                          {msg.sql}
+                        </pre>
+                      </div>
+                    )}
+                    
+                    {/* Data Chart */}
+                    {msg.data && msg.data.length > 0 && (
+                      <DynamicChart data={msg.data} type={msg.chartType || 'bar'} />
+                    )}
+                    
+                    {/* Feedback Buttons */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                      <button className="p-1.5 rounded-lg text-gray-500 hover:text-green-400 hover:bg-green-500/10 transition-colors">
+                        <ThumbsUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                        <ThumbsDown className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  </details>
-                </div>
-              )}
-              
-              {/* Feedback Buttons (Only for agent messages with SQL) */}
-              {msg.role === 'agent' && msg.sql && (
-                <div className="flex gap-2 mt-2 ml-2">
-                  <button 
-                    onClick={() => handleFeedback(msg, 1)}
-                    className={`p-1 rounded hover:bg-white/10 transition-colors ${msg.rating === 1 ? 'text-green-400 bg-green-500/10' : 'text-gray-500 hover:text-green-400'}`}
-                    title="Helpful"
-                  >
-                    <ThumbsUp className="w-3 h-3" />
-                  </button>
-                  <button 
-                    onClick={() => handleFeedback(msg, -1)}
-                    className={`p-1 rounded hover:bg-white/10 transition-colors ${msg.rating === -1 ? 'text-red-400 bg-red-500/10' : 'text-gray-500 hover:text-red-400'}`}
-                    title="Not Helpful"
-                  >
-                    <ThumbsDown className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-          
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-white/5 rounded-2xl px-6 py-5 rounded-bl-none flex gap-1.5 items-center">
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}/>
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}/>
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}/>
+                  </div>
+                )}
               </div>
             </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
 
-        {/* Input Area */}
-        <div className="p-4 border-t border-white/10 bg-white/[0.02] backdrop-blur-md space-y-4">
-          {/* Suggested Queries */}
-          {messages.length <= 2 && (
-            <div className="flex flex-wrap gap-2">
-              <span className="text-xs text-gray-500 flex items-center gap-1 mr-2">
-                <Lightbulb className="w-3 h-3" />
-                Try asking:
-              </span>
-              {suggestedQueries.map((q, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSuggestedQuery(q)}
-                  className="px-3 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 text-xs text-gray-300 transition-colors"
-                >
-                  {q}
-                </button>
-              ))}
+            {msg.role === 'user' && (
+              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0 mt-1">
+                <span className="text-xs font-bold text-white">U</span>
+              </div>
+            )}
+          </div>
+        ))}
+        
+        {loading && (
+          <div className="flex gap-4">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shrink-0 mt-1">
+              <Sparkles className="w-4 h-4 text-white animate-pulse" />
             </div>
-          )}
+            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl rounded-tl-sm w-48">
+              <div className="flex gap-1.5">
+                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
-          <div className="relative flex gap-2">
+      {/* Input Area */}
+      <div className="shrink-0 relative z-20">
+        {messages.length === 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-4 custom-scrollbar mb-2">
+            {suggestedQueries.map((q, i) => (
+              <button
+                key={i}
+                onClick={() => handleSend(q)}
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm text-gray-300 whitespace-nowrap transition-all"
+              >
+                <Lightbulb className="w-3 h-3 text-yellow-400" />
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="relative group">
+          <div className="absolute inset-0 bg-blue-500/10 blur-xl rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="relative flex items-center gap-2 bg-black/40 border border-white/10 rounded-2xl p-2 pl-4 focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/20 transition-all backdrop-blur-xl">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Ask a question about your data..."
-              className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all"
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              placeholder="Ask about your data (e.g., 'Show top customers by revenue')..."
+              className="flex-1 bg-transparent border-none outline-none text-white placeholder:text-gray-500 h-10"
+              disabled={loading}
+              autoFocus
             />
             <button
-              onClick={handleSend}
-              disabled={!query.trim() || loading}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center min-w-[50px]"
+              onClick={() => handleSend()}
+              disabled={loading || !query.trim()}
+              className="p-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all disabled:opacity-50 disabled:hover:bg-blue-600 hover:scale-105 active:scale-95 shadow-lg shadow-blue-900/20"
             >
-              <Send className="w-5 h-5" />
+              <Send className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-[10px] text-center text-gray-600">
-            Nexus can make mistakes. Please verify important information.
+        </div>
+        <div className="text-center mt-2">
+          <p className="text-[10px] text-gray-600">
+            Nexus AI can make mistakes. Double check important results.
           </p>
         </div>
-      </Card>
       </div>
     </div>
   );
