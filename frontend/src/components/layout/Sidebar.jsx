@@ -72,13 +72,7 @@ const Sidebar = () => {
         })}
       </nav>
 
-      {/* User Profile */}
-      <div className="mt-auto pt-6 border-t border-white/10">
-        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors group">
-          <LogOut className="w-5 h-5 group-hover:text-red-400 transition-colors" />
-          <span className="font-medium text-sm">Sign Out</span>
-        </button>
-      </div>
+      
     </div>
   );
 };

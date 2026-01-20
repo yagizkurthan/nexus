@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Database, Table, Search, ChevronRight, Loader, Download, X, ArrowUpDown, ArrowUp, ArrowDown, FileText, Hash, Calendar, PanelLeftClose, PanelLeft, Trash2 } from "lucide-react";
+import { Database, Table, Search, ChevronRight, Loader, Download, X, ArrowUpDown, ArrowUp, ArrowDown, FileText, Hash, Calendar, PanelLeftClose, PanelLeft, Trash2, FolderPlus, Folder, ChevronDown, GripVertical } from "lucide-react";
 import Card from "../components/ui/Card";
 import axios from 'axios';
 
@@ -27,6 +27,139 @@ const DataExplorer = () => {
 
   // Sidebar toggle state
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Categories state (stored in localStorage)
+  // Format: { categoryName: [dbName1, dbName2, ...] }
+  const [categories, setCategories] = useState(() => {
+    const saved = localStorage.getItem('db_categories');
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [expandedCategories, setExpandedCategories] = useState({});
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [draggedDb, setDraggedDb] = useState(null);
+
+  // Persist categories to localStorage
+  useEffect(() => {
+    localStorage.setItem('db_categories', JSON.stringify(categories));
+  }, [categories]);
+
+  // Category handlers
+  const addCategory = () => {
+    if (!newCategoryName.trim()) return;
+    setCategories(prev => ({ ...prev, [newCategoryName.trim()]: [] }));
+    setExpandedCategories(prev => ({ ...prev, [newCategoryName.trim()]: true }));
+    setNewCategoryName('');
+    setShowAddCategory(false);
+  };
+
+  const deleteCategory = (catName) => {
+    if (!window.confirm(`Delete category "${catName}"?`)) return;
+    setCategories(prev => {
+      const updated = { ...prev };
+      delete updated[catName];
+      return updated;
+    });
+  };
+
+  const toggleCategory = (catName) => {
+    setExpandedCategories(prev => ({ ...prev, [catName]: !prev[catName] }));
+  };
+
+  // Drag handlers
+  const handleDragStart = (e, db) => {
+    setDraggedDb(db);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDropOnCategory = (e, catName) => {
+    e.preventDefault();
+    if (!draggedDb) return;
+    
+    // Remove from all categories first
+    setCategories(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(cat => {
+        updated[cat] = updated[cat].filter(db => db !== draggedDb);
+      });
+      // Add to target category
+      if (!updated[catName].includes(draggedDb)) {
+        updated[catName] = [...updated[catName], draggedDb];
+      }
+      return updated;
+    });
+    setDraggedDb(null);
+  };
+
+  const handleDropOnUncategorized = (e) => {
+    e.preventDefault();
+    if (!draggedDb) return;
+    
+    // Remove from all categories
+    setCategories(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(cat => {
+        updated[cat] = updated[cat].filter(db => db !== draggedDb);
+      });
+      return updated;
+    });
+    setDraggedDb(null);
+  };
+
+  // Get databases not in any category
+  const uncategorizedDbs = databases.filter(db => 
+    !Object.values(categories).flat().includes(db)
+  );
+
+  // Draggable database item component
+  const DbItem = ({ db }) => (
+    <div className="space-y-1">
+      <div
+        draggable
+        onDragStart={(e) => handleDragStart(e, db)}
+        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between cursor-grab active:cursor-grabbing ${
+          selectedDb === db ? 'bg-blue-600/20 text-blue-400 border border-blue-500/20' : 'text-gray-400 hover:bg-white/5 hover:text-white'
+        }`}
+        onClick={() => handleDbSelect(db)}
+      >
+        <div className="flex items-center gap-2">
+          <GripVertical className="w-3 h-3 text-gray-600" />
+          <span className="truncate font-medium">{db}</span>
+        </div>
+        {selectedDb === db && <ChevronRight className="w-3 h-3" />}
+      </div>
+      
+      {selectedDb === db && (
+        <div className="pl-4 space-y-1 mt-1 border-l border-white/10 ml-3">
+          {tables.map((table) => (
+            <div key={table} className="group/table flex items-center">
+              <button
+                onClick={() => handleTableSelect(table)}
+                className={`flex-1 text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                  selectedTable === table ? 'bg-purple-500/20 text-purple-400 border border-purple-500/20' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                }`}
+              >
+                <Table className="w-3 h-3" />
+                <span className="truncate">{table}</span>
+              </button>
+              <button
+                onClick={(e) => handleDeleteTable(table, e)}
+                className="p-1 text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover/table:opacity-100"
+                title={`Delete ${table}`}
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   useEffect(() => {
     fetchDatabases();
@@ -252,51 +385,92 @@ const DataExplorer = () => {
         {/* Sidebar: DBs and Tables */}
         {sidebarOpen && (
         <Card className="col-span-3 flex flex-col !p-0 overflow-hidden border-white/10 bg-black/20 backdrop-blur-sm">
-          <div className="p-4 border-b border-white/10 bg-white/5">
+          <div className="p-4 border-b border-white/10 bg-white/5 flex items-center justify-between">
             <h3 className="font-semibold text-white flex items-center gap-2">
               <Database className="w-4 h-4 text-blue-400" />
               Databases
             </h3>
+            <button
+              onClick={() => setShowAddCategory(!showAddCategory)}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-green-400 transition-colors"
+              title="Add Category"
+            >
+              <FolderPlus className="w-4 h-4" />
+            </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin scrollbar-thumb-white/10">
-            {databases.map((db) => (
-              <div key={db} className="space-y-1">
-                <button
-                  onClick={() => handleDbSelect(db)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between ${
-                    selectedDb === db ? 'bg-blue-600/20 text-blue-400 border border-blue-500/20' : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                  }`}
-                >
-                  <span className="truncate font-medium">{db}</span>
-                  {selectedDb === db && <ChevronRight className="w-3 h-3" />}
-                </button>
-                
-                {selectedDb === db && (
-                  <div className="pl-4 space-y-1 mt-1 border-l border-white/10 ml-3">
-                    {tables.map((table) => (
-                      <div key={table} className="group/table flex items-center">
-                        <button
-                          onClick={() => handleTableSelect(table)}
-                          className={`flex-1 text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                            selectedTable === table ? 'bg-purple-500/20 text-purple-400 border border-purple-500/20' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                          }`}
-                        >
-                          <Table className="w-3 h-3" />
-                          <span className="truncate">{table}</span>
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteTable(table, e)}
-                          className="p-1 text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover/table:opacity-100"
-                          title={`Delete ${table}`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
+          
+          {/* Add Category Input */}
+          {showAddCategory && (
+            <div className="p-2 border-b border-white/10 bg-white/5 flex gap-2">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addCategory()}
+                placeholder="Category name..."
+                className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-green-500/50"
+                autoFocus
+              />
+              <button
+                onClick={addCategory}
+                className="px-3 py-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded-lg text-sm border border-green-500/20"
+              >
+                Add
+              </button>
+            </div>
+          )}
+          
+          <div className="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-thin scrollbar-thumb-white/10">
+            {/* Categories */}
+            {Object.entries(categories).map(([catName, catDbs]) => (
+              <div
+                key={catName}
+                className="rounded-lg border border-white/5 bg-white/5 overflow-hidden"
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDropOnCategory(e, catName)}
+              >
+                <div className="flex items-center justify-between px-3 py-2 bg-white/5 cursor-pointer" onClick={() => toggleCategory(catName)}>
+                  <div className="flex items-center gap-2 text-yellow-400">
+                    <Folder className="w-4 h-4" />
+                    <span className="text-sm font-medium">{catName}</span>
+                    <span className="text-xs text-gray-500">({catDbs.length})</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteCategory(catName); }}
+                      className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                    <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${expandedCategories[catName] ? 'rotate-180' : ''}`} />
+                  </div>
+                </div>
+                {expandedCategories[catName] && (
+                  <div className="p-1 space-y-1 min-h-[30px] border-t border-white/5">
+                    {catDbs.length === 0 && (
+                      <div className="text-xs text-gray-600 text-center py-2">Drag databases here</div>
+                    )}
+                    {catDbs.map(db => databases.includes(db) && (
+                      <DbItem key={db} db={db} />
                     ))}
                   </div>
                 )}
               </div>
             ))}
+            
+            {/* Uncategorized Databases */}
+            <div
+              className="mt-2"
+              onDragOver={handleDragOver}
+              onDrop={handleDropOnUncategorized}
+            >
+              {Object.keys(categories).length > 0 && uncategorizedDbs.length > 0 && (
+                <div className="text-xs text-gray-500 px-2 py-1 mb-1">Uncategorized</div>
+              )}
+              {uncategorizedDbs.map((db) => (
+                <DbItem key={db} db={db} />
+              ))}
+            </div>
           </div>
         </Card>
         )}
