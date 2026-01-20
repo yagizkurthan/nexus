@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Database, Table, Search, ChevronRight, Loader, Download, X, ArrowUpDown, ArrowUp, ArrowDown, FileText, Hash, Calendar } from "lucide-react";
+import { Database, Table, Search, ChevronRight, Loader, Download, X, ArrowUpDown, ArrowUp, ArrowDown, FileText, Hash, Calendar, PanelLeftClose, PanelLeft } from "lucide-react";
 import Card from "../components/ui/Card";
 import axios from 'axios';
 
@@ -25,6 +25,9 @@ const DataExplorer = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeoutRef = useRef(null);
 
+  // Sidebar toggle state
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
   useEffect(() => {
     fetchDatabases();
   }, []);
@@ -48,7 +51,7 @@ const DataExplorer = () => {
       clearTimeout(searchTimeoutRef.current);
     }
 
-    // If no search term, reset to normal table data
+    // If no search term, show all table data
     if (!searchTerm.trim()) {
       setFilteredRows(tableData.rows);
       return;
@@ -64,7 +67,7 @@ const DataExplorer = () => {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchTerm, selectedDb, selectedTable]);
+  }, [searchTerm, selectedDb, selectedTable, tableData.rows]);
 
   // Search entire database via API
   const searchDatabase = async (term) => {
@@ -183,14 +186,24 @@ const DataExplorer = () => {
   return (
     <div className="space-y-6 h-[calc(100vh-2rem)] flex flex-col">
       <div className="flex justify-between items-center shrink-0">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Data Explorer</h2>
-          <p className="text-gray-400">Inspect and analyze your raw data</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors border border-white/10"
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          >
+            {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-white">Data Explorer</h2>
+            <p className="text-gray-400">Inspect and analyze your raw data</p>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
+      <div className={`grid ${sidebarOpen ? 'grid-cols-12' : 'grid-cols-1'} gap-6 flex-1 min-h-0`}>
         {/* Sidebar: DBs and Tables */}
+        {sidebarOpen && (
         <Card className="col-span-3 flex flex-col !p-0 overflow-hidden border-white/10 bg-black/20 backdrop-blur-sm">
           <div className="p-4 border-b border-white/10 bg-white/5">
             <h3 className="font-semibold text-white flex items-center gap-2">
@@ -231,9 +244,10 @@ const DataExplorer = () => {
             ))}
           </div>
         </Card>
+        )}
 
         {/* Main View: Data Table */}
-        <Card className="col-span-9 flex flex-col !p-0 overflow-hidden relative border-white/10 bg-black/20 backdrop-blur-sm">
+        <Card className={`${sidebarOpen ? 'col-span-9' : 'col-span-12'} flex flex-col !p-0 overflow-hidden relative border-white/10 bg-black/20 backdrop-blur-sm`}>
           {!selectedTable ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500">
               <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">

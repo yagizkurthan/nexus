@@ -28,6 +28,31 @@ const AgentControlCenter = () => {
     accuracy: '98%'          // Mocked
   });
 
+  // Format timestamp to relative time (e.g., "2 hours ago", "Jan 15, 2026")
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+    
+    if (diffSec < 60) return 'Just now';
+    if (diffMin < 60) return `${diffMin} min ago`;
+    if (diffHour < 24) return `${diffHour} hour${diffHour > 1 ? 's' : ''} ago`;
+    if (diffDay < 7) return `${diffDay} day${diffDay > 1 ? 's' : ''} ago`;
+    
+    // For older dates, show formatted date
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  };
+
   useEffect(() => {
     fetchHistory();
   }, []);
@@ -275,7 +300,7 @@ const AgentControlCenter = () => {
                       <ThumbsDown className="w-3 h-3" /> Unhelpful
                     </span>
                   )}
-                  <span className="text-xs text-gray-600">Just now</span>
+                  <span className="text-xs text-gray-600">{formatTimeAgo(item.timestamp)}</span>
                 </div>
               </div>
             </Card>
