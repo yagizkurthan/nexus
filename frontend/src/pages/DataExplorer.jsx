@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Database, Table, Search, ChevronRight, Loader, Download, X, ArrowUpDown, ArrowUp, ArrowDown, FileText, Hash, Calendar } from "lucide-react";
 import Card from "../components/ui/Card";
 import axios from 'axios';
@@ -21,6 +21,10 @@ const DataExplorer = () => {
   const [sortBy, setSortBy] = useState(null);
   const [sortOrder, setSortOrder] = useState('asc');
 
+  // Search state
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimeoutRef = useRef(null);
+
   useEffect(() => {
     fetchDatabases();
   }, []);
@@ -37,20 +41,51 @@ const DataExplorer = () => {
     }
   }, [databases]);
 
+  // Debounced database-wide search
   useEffect(() => {
-    // Filter rows based on search term (client-side for current page)
-    if (!searchTerm) {
-      setFilteredRows(tableData.rows);
-    } else {
-      const filtered = tableData.rows.filter((row) => {
-        return tableData.columns.some((col) => {
-          const value = String(row[col] || '').toLowerCase();
-          return value.includes(searchTerm.toLowerCase());
-        });
-      });
-      setFilteredRows(filtered);
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
-  }, [searchTerm, tableData]);
+
+    // If no search term, reset to normal table data
+    if (!searchTerm.trim()) {
+      setFilteredRows(tableData.rows);
+      return;
+    }
+
+    // Debounce search by 300ms
+    searchTimeoutRef.current = setTimeout(() => {
+      searchDatabase(searchTerm);
+    }, 300);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchTerm, selectedDb, selectedTable]);
+
+  // Search entire database via API
+  const searchDatabase = async (term) => {
+    if (!selectedDb || !selectedTable || !term.trim()) return;
+    
+    setSearchLoading(true);
+    try {
+      const url = `/api/databases/${selectedDb}/tables/${selectedTable}/search?q=${encodeURIComponent(term)}&page=1&limit=${limit}`;
+      const res = await axios.get(url);
+      
+      setFilteredRows(res.data.rows || []);
+      setTotalRows(res.data.total || 0);
+      setTotalPages(res.data.pages || 0);
+      setPage(1);
+    } catch (error) {
+      console.error("Search failed", error);
+      setFilteredRows([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
 
   const fetchDatabases = async () => {
     try {
@@ -230,7 +265,7 @@ const DataExplorer = () => {
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-400 transition-colors" />
                     <input 
                       type="text"
-                      placeholder="Search current page..."
+                      placeholder="Search in database..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-64 bg-black/40 border border-white/10 rounded-xl pl-10 pr-8 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder-gray-600"
@@ -258,14 +293,16 @@ const DataExplorer = () => {
               </div>
               
               <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-white/10 relative">
-                {loading ? (
+                {(loading || searchLoading) ? (
                   <div className="h-full flex flex-col items-center justify-center gap-4">
                     <div className="flex gap-1 items-center">
                         <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}/>
                         <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}/>
                         <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}/>
                     </div>
-                    <p className="text-sm text-gray-500 animate-pulse font-medium">Fetching {limit} rows...</p>
+                    <p className="text-sm text-gray-500 animate-pulse font-medium">
+                      {searchLoading ? 'Searching database...' : `Fetching ${limit} rows...`}
+                    </p>
                   </div>
                 ) : filteredRows.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-gray-500">

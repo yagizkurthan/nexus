@@ -101,6 +101,12 @@ SELECT * FROM users WHERE name LIKE 'John Doe%';
 *   **Professional & Crisp**: Avoid fluff. Get straight to the data.
 *   **Visuals**: Use Markdown tables for small result sets.
 *   **Proactive**: If you see an interesting trend, mention it.
+
+### ORDER CONSISTENCY RULE
+When a user asks a follow-up question about previously returned results (e.g., "What are the names of these books?", "Give me their titles"), 
+you MUST maintain the EXACT SAME ORDER as the previous result set.
+If the previous query returned ISBNs in a specific order, the follow-up query about those same records MUST return data in the same order.
+Use ORDER BY clauses matching the previous query's sorting if needed, or explicitly order by the values from the previous result.
 """
 
 def get_model(model_name="gemini-2.0-flash-exp"):
@@ -711,6 +717,77 @@ def api_table_rows(db_name, table_name):
             "page": page,
             "limit": limit,
             "pages": (total_rows + limit - 1) // limit
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/databases/<db_name>/tables/<table_name>/search', methods=['GET'])
+def api_table_search(db_name, table_name):
+    """Search all columns in a table for matching rows"""
+    try:
+        q = request.args.get('q', '').strip()
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 100))
+        sort_by = request.args.get('sort_by')
+        order = request.args.get('order', 'asc').upper()
+        offset = (page - 1) * limit
+        
+        if not q:
+            # No search term, return empty
+            return jsonify({
+                "rows": [],
+                "columns": [],
+                "total": 0,
+                "page": page,
+                "limit": limit,
+                "pages": 0
+            })
+        
+        # Get column names for this table
+        col_res = execute_sql(db_name, f"PRAGMA table_info(\"{table_name}\")")
+        if 'error' in col_res:
+            return jsonify(col_res), 500
+            
+        columns = [row['name'] for row in col_res.get('rows', [])]
+        
+        if not columns:
+            return jsonify({'error': 'Table has no columns'}), 400
+        
+        # Build WHERE clause to search all columns
+        search_term = q.replace("'", "''")  # Escape single quotes
+        where_clauses = [f"\"{col}\" LIKE '%{search_term}%'" for col in columns]
+        where_sql = " OR ".join(where_clauses)
+        
+        # Get total count of matching rows
+        count_sql = f"SELECT COUNT(*) as count FROM \"{table_name}\" WHERE {where_sql}"
+        count_res = execute_sql(db_name, count_sql)
+        total_rows = 0
+        if 'rows' in count_res and len(count_res['rows']) > 0:
+            total_rows = count_res['rows'][0]['count']
+        
+        # Build main query
+        sql = f"SELECT * FROM \"{table_name}\" WHERE {where_sql}"
+        
+        if sort_by and sort_by in columns:
+            if order not in ['ASC', 'DESC']:
+                order = 'ASC'
+            sql += f" ORDER BY \"{sort_by}\" {order}"
+            
+        sql += f" LIMIT {limit} OFFSET {offset}"
+        
+        res = execute_sql(db_name, sql)
+        
+        if 'error' in res:
+            return jsonify(res), 500
+            
+        return jsonify({
+            "rows": res.get('rows', []),
+            "columns": res.get('columns', []) or columns,
+            "total": total_rows,
+            "page": page,
+            "limit": limit,
+            "pages": (total_rows + limit - 1) // limit if total_rows > 0 else 0,
+            "search_query": q
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

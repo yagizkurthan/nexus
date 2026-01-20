@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Link, useLocation } from "react-router-dom";
 import { 
-  LayoutDashboard, 
+  MessageCircle, 
   Database, 
   BarChart2, 
   Settings, 
@@ -16,7 +16,7 @@ const Sidebar = () => {
   const activeTab = location.pathname;
 
   const menuItems = [
-    { id: "/agent", label: "Dashboard", icon: LayoutDashboard },
+    { id: "/agent", label: "Chat", icon: MessageCircle },
     { id: "/data", label: "Data Sources", icon: Database },
     { id: "/explorer", label: "Data Explorer", icon: Search },
     { id: "/analytics", label: "Analytics", icon: BarChart2 },
@@ -25,7 +25,7 @@ const Sidebar = () => {
   ];
 
   return (
-    <div className="w-64 h-screen bg-[#09090b]/80 backdrop-blur-xl border-r border-white/10 flex flex-col p-6 fixed left-0 top-0 z-50">
+    <div className="w-64 h-screen liquid-glass-sidebar flex flex-col p-6 fixed left-0 top-0 z-50">
       {/* Logo */}
       <div className="flex items-center gap-3 mb-10 px-2">
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20 ring-1 ring-white/10">

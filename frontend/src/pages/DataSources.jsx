@@ -27,7 +27,7 @@ const DataSources = ({ onNavigate }) => {
           name: displayName,
           type: 'File Upload',
           status: 'Connected',
-          lastSync: 'Just now'
+          lastSync: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
         };
       });
       setDatabases(dbs);

@@ -1,7 +1,0 @@
-month,sales,region
-Jan,100,North
-Jan,150,South
-Feb,200,North
-Feb,120,South
-Mar,300,North
-Mar,180,South

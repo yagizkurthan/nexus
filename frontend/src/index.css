@@ -73,6 +73,26 @@ body {
   .glass-card {
     @apply bg-black/40 backdrop-blur-xl border border-white/10 shadow-xl;
   }
+
+  /* macOS Tahoe "Liquid Glass" style */
+  .liquid-glass {
+    @apply bg-white/[0.03] backdrop-blur-2xl border border-white/[0.08];
+    box-shadow: 
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+      0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  .liquid-glass-sidebar {
+    @apply bg-[#0a0a0b]/70 backdrop-blur-2xl border-r border-white/[0.06];
+    box-shadow: 
+      1px 0 0 0 rgba(255, 255, 255, 0.03) inset,
+      0 0 60px rgba(0, 0, 0, 0.3);
+  }
+
+  .liquid-glass-input {
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08];
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) inset;
+  }
 }
 
 /* Animations */
