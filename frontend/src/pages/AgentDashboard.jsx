@@ -166,6 +166,29 @@ const AgentDashboard = () => {
     // handleSend(templateQuery); 
   };
 
+  const handleFeedback = async (index, rating) => {
+    const msg = messages[index];
+    const prevMsg = messages[index - 1]; // Assuming previous message is the user query
+    
+    if (!msg || !prevMsg || msg.role !== 'assistant') return;
+
+    // Optimistically update UI
+    const newMessages = [...messages];
+    newMessages[index] = { ...msg, rating }; // Set rating: 1 or -1
+    setMessages(newMessages);
+
+    try {
+      await axios.post('/api/feedback', {
+        query: prevMsg.content,
+        sql: msg.sql,
+        rating: rating
+      });
+    } catch (error) {
+      console.error("Feedback failed", error);
+      // Revert on failure? Or just log.
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-2rem)] flex flex-col gap-6 relative">
       {/* Header */}
@@ -239,10 +262,24 @@ const AgentDashboard = () => {
                     
                     {/* Feedback Buttons */}
                     <div className="flex items-center gap-2 pt-2 border-t border-white/5">
-                      <button className="p-1.5 rounded-lg text-gray-500 hover:text-green-400 hover:bg-green-500/10 transition-colors">
+                      <button 
+                        onClick={() => handleFeedback(idx, 1)}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          msg.rating === 1 
+                            ? 'bg-green-500/20 text-green-400' 
+                            : 'text-gray-500 hover:text-green-400 hover:bg-green-500/10'
+                        }`}
+                      >
                         <ThumbsUp className="w-3.5 h-3.5" />
                       </button>
-                      <button className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                      <button 
+                        onClick={() => handleFeedback(idx, -1)}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          msg.rating === -1 
+                            ? 'bg-red-500/20 text-red-400' 
+                            : 'text-gray-500 hover:text-red-400 hover:bg-red-500/10'
+                        }`}
+                      >
                         <ThumbsDown className="w-3.5 h-3.5" />
                       </button>
                     </div>

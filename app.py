@@ -307,6 +307,10 @@ def chat():
         max_total_attempts = 20 # 5 models * 4 keys
         attempt = 0
         last_error = None
+        start_time = time.time()
+        sql_executed = None
+        data_summary = None
+        final_response_text = ""
         
         while attempt < max_total_attempts:
             model_name = models_list[attempt % len(models_list)]
@@ -390,6 +394,7 @@ def chat():
                 print(f"Error with {model_name}: {e}")
                 error_str = str(e).lower()
                 is_quota_error = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str
+                is_auth_error = "401" in error_str or "403" in error_str or "unauthorized" in error_str or "permission denied" in error_str
                 is_not_found = "404" in error_str or "not found" in error_str
                 
                 if is_quota_error or is_auth_error or is_not_found:
@@ -409,11 +414,13 @@ def chat():
             raise last_error
         
         # --- End Loop ---
+        
+        execution_time = time.time() - start_time
 
         # RAG Learning: Save successful query
         if sql_executed and data_summary and "Error" not in data_summary:
             try:
-                rag.add_to_memory(user_message, sql_executed)
+                rag.add_to_memory(user_message, sql_executed, execution_time=execution_time)
             except Exception as e:
                 print(f"Failed to save to memory: {e}")
 

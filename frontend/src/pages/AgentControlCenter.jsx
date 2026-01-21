@@ -90,6 +90,8 @@ const AgentControlCenter = () => {
     // Calculate Accuracy (Positive Ratings / Total Rated)
     const ratedItems = data.filter(i => i.rating !== 0);
     const positiveRatings = data.filter(i => i.rating === 1).length;
+    const negativeRatings = data.filter(i => i.rating === -1).length;
+    
     const accuracy = ratedItems.length > 0 
         ? Math.round((positiveRatings / ratedItems.length) * 100) 
         : 100; // Default to 100% if no ratings yet
@@ -130,18 +132,37 @@ const AgentControlCenter = () => {
     if (avgSqlLength > 300) complexityLabel = "High";
 
     // Calculate Feedback Ratio
-    const feedbackRatio = ratedItems.length > 0 
-        ? `${positiveRatings}/${ratedItems.length} Positive` 
-        : "No ratings";
+    let feedbackRatio = "No ratings";
+    if (ratedItems.length > 0) {
+        const ratio = Math.round((positiveRatings / ratedItems.length) * 100);
+        feedbackRatio = `${ratio}% Positive (${positiveRatings}👍 / ${negativeRatings}👎)`;
+    }
 
-    // Calculate realistic response time (based on complexity)
-    const avgResponseMs = avgSqlLength > 200 ? 1800 : avgSqlLength > 100 ? 1200 : 800;
-    const avgResponseTime = `${(avgResponseMs / 1000).toFixed(1)}s`;
+    // Calculate realistic response time (based on actual execution time)
+    // Fallback to estimate if execution_time is missing (0)
+    let totalTime = 0;
+    let validTimeCount = 0;
+    
+    data.forEach(item => {
+        if (item.execution_time > 0) {
+            totalTime += item.execution_time;
+            validTimeCount++;
+        }
+    });
+    
+    let avgResponseTime = "0.0s";
+    if (validTimeCount > 0) {
+        avgResponseTime = `${(totalTime / validTimeCount).toFixed(2)}s`;
+    } else {
+        // Fallback for old data
+        const avgResponseMs = avgSqlLength > 200 ? 1800 : avgSqlLength > 100 ? 1200 : 800;
+        avgResponseTime = `~${(avgResponseMs / 1000).toFixed(1)}s`;
+    }
 
     setStats({
         totalQueries: total,
         avgResponseTime: avgResponseTime,
-        learningRate: `+${Math.min(total * 2, 100)}%`,
+        learningRate: `${total} Memories`, // Changed from fake rate to count
         accuracy: `${accuracy}%`,
         activityData: chartData,
         peakHour: peakHourStr,
@@ -168,7 +189,7 @@ const AgentControlCenter = () => {
             <div>
               <p className="text-gray-400 text-sm">Total Queries</p>
               <h3 className="text-3xl font-bold text-white mt-1">{stats.totalQueries}</h3>
-              <p className="text-xs text-gray-500 mt-1">All time</p>
+              <p className="text-xs text-gray-500 mt-1">{stats.learningRate} stored</p>
             </div>
             <div className="p-3 rounded-xl bg-blue-500/10">
               <Database className="w-6 h-6 text-blue-400" />
@@ -182,8 +203,7 @@ const AgentControlCenter = () => {
               <p className="text-gray-400 text-sm">Avg Response Time</p>
               <h3 className="text-3xl font-bold text-white mt-1">{stats.avgResponseTime}</h3>
               <p className="text-xs text-green-400 mt-1 flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" />
-                {stats.learningRate} faster
+                Model latency
               </p>
             </div>
             <div className="p-3 rounded-xl bg-yellow-500/10">

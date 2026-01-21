@@ -45,10 +45,11 @@ class RAGManager:
             print(f"Embedding error: {e}")
             return None
 
-    def add_to_memory(self, query, sql, rating=0):
+    def add_to_memory(self, query, sql, rating=0, execution_time=0):
         # Check if query already exists to avoid duplicates
         for item in self.memory:
             if item['query'] == query:
+                # Update existing if needed, or just return
                 return
         
         embedding = self.embed_text(query)
@@ -58,10 +59,11 @@ class RAGManager:
                 'sql': sql,
                 'embedding': embedding,
                 'rating': rating,
+                'execution_time': execution_time,
                 'timestamp': datetime.now().isoformat()
             })
             self._save_memory()
-            print(f"Added to memory: {query}")
+            print(f"Added to memory: {query} (Time: {execution_time}s)")
 
     def add_feedback(self, query, sql, rating):
         """Update the rating for a specific query/sql pair."""
