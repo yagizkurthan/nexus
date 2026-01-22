@@ -122,14 +122,14 @@ If the previous query returned ISBNs in a specific order, the follow-up query ab
 Use ORDER BY clauses matching the previous query's sorting if needed, or explicitly order by the values from the previous result.
 """
 
-def get_model(model_name="gemini-2.0-flash-exp"):
+def get_model(model_name="gemini-2.5-flash"):
     return genai.GenerativeModel(
         model_name=model_name,
         generation_config=generation_config,
         system_instruction=SYSTEM_INSTRUCTION
     )
 
-def try_generate_content(prompt, preferred_model="gemini-2.0-flash-exp", history=None):
+def try_generate_content(prompt, preferred_model="gemini-2.5-flash", history=None):
     """
     Tries to generate content with the preferred model.
     If it fails with a quota error (429), falls back to a lighter model.
@@ -149,9 +149,9 @@ def try_generate_content(prompt, preferred_model="gemini-2.0-flash-exp", history
     
     # Fallback chain
     fallback_chain = [
-        "gemini-2.0-flash-exp",
-        "gemini-2.0-flash-lite-preview-02-05", 
-        "gemini-2.0-pro-exp-02-05"
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash"
     ]
     
     # Add fallbacks
@@ -178,13 +178,15 @@ def try_generate_content(prompt, preferred_model="gemini-2.0-flash-exp", history
         except Exception as e:
             print(f"Error with {model_name}: {type(e).__name__} - {e}")
             error_str = str(e).lower()
-            is_quota_error = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str or "overloaded" in error_str
-            is_auth_error = "400" in error_str or "key" in error_str or "invalid" in error_str or "expired" in error_str
+            is_quota = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str or "overloaded" in error_str
+            is_auth = "400" in error_str or "key" in error_str or "invalid" in error_str or "expired" in error_str or "unauthorized" in error_str
+            is_not_found = "404" in error_str or "not found" in error_str
             
-            if is_quota_error or is_auth_error:
+            if is_quota or is_auth or is_not_found:
                 last_error = e
-                print(f"API Error detected. Rotating key...")
-                rotate_key()
+                print(f"API Error detected ({error_str}). Rotating/Skipping...")
+                if not is_not_found:
+                    rotate_key()
                 time.sleep(1)
                 continue 
             else:
@@ -300,9 +302,9 @@ def chat():
         # --- Tool Execution Loop with Retry ---
         
         models_list = [
-            "gemini-2.0-flash-exp", 
-            "gemini-2.0-flash-lite-preview-02-05",
-            "gemini-2.0-pro-exp-02-05"
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash"
         ]
         max_total_attempts = 20 # 5 models * 4 keys
         attempt = 0
@@ -393,16 +395,15 @@ def chat():
             except Exception as e:
                 print(f"Error with {model_name}: {e}")
                 error_str = str(e).lower()
-                is_quota_error = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str
-                is_auth_error = "401" in error_str or "403" in error_str or "unauthorized" in error_str or "permission denied" in error_str
+                is_quota = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str
+                is_auth = "401" in error_str or "403" in error_str or "unauthorized" in error_str or "permission denied" in error_str
                 is_not_found = "404" in error_str or "not found" in error_str
                 
-                if is_quota_error or is_auth_error or is_not_found:
+                if is_quota or is_auth or is_not_found:
                     print(f"API Error ({error_str}) for {model_name}. Rotating/Skipping...")
                     if not is_not_found:
                          rotate_key()
                     
-                    import time
                     time.sleep(1) 
                     last_error = e
                     attempt += 1
