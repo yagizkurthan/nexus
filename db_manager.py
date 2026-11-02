@@ -8,9 +8,22 @@ if not os.path.exists(DB_DIR):
 
 
 def db_path(name: str) -> str:
-    if not name.endswith('.db'):
+    """Return a database path constrained to DB_DIR; reject path traversal."""
+    from pathlib import Path
+
+    if not isinstance(name, str):
+        raise ValueError("database name must be a string")
+    name = name.strip()
+    if not name or name in {".", ".."} or "/" in name or "\\" in name:
+        raise ValueError("invalid database name")
+    if not name.endswith(".db"):
         name = f"{name}.db"
-    return os.path.join(DB_DIR, name)
+
+    root = Path(DB_DIR).resolve()
+    candidate = (root / name).resolve()
+    if candidate.parent != root:
+        raise ValueError("database path must remain inside the database directory")
+    return str(candidate)
 
 
 def list_databases() -> List[str]:
