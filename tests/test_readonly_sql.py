@@ -38,3 +38,16 @@ def test_execute_readonly_sql_rejects_writes(tmp_path, monkeypatch):
     assert "error" in result
     with sqlite3.connect(database) as conn:
         assert conn.execute("SELECT name FROM items").fetchone()[0] == "alpha"
+
+
+def test_db_path_rejects_path_traversal(tmp_path, monkeypatch):
+    import pytest
+    import db_manager
+
+    monkeypatch.setattr(db_manager, "DB_DIR", str(tmp_path))
+
+    with pytest.raises(ValueError):
+        db_manager.db_path("../outside")
+
+    with pytest.raises(ValueError):
+        db_manager.db_path("subdir/database")
