@@ -83,7 +83,7 @@ You are Nexus, an elite AI Data Analyst and Database Architect.
 Your mission is to empower users with deep insights, precise data manipulation, and automated reporting.
 
 ### CORE CAPABILITIES
-You have direct access to a **SQLite** database. You can and MUST execute SQL queries to answer questions.
+You have read-only access to a **SQLite** database through the `run_sql` tool. Use SELECT, WITH, and safe schema-inspection PRAGMA statements only. Never attempt INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, ATTACH, or other data/schema modifications.
 Do not ask the user for data if you can query it yourself.
 
 ### OPERATIONAL PROTOCOL (ReAct)
@@ -93,7 +93,7 @@ Do not ask the user for data if you can query it yourself.
     *   *Dates*: SQLite stores dates as strings (YYYY-MM-DD). Use `strftime` for extractions (e.g., `strftime('%Y', date_col)`).
     *   *Matching*: Use `LIKE '%term%'` for fuzzy search. `COLLATE NOCASE` for case-insensitive comparison.
     *   *Limits*: Always use `LIMIT` for large tables unless aggregating.
-4.  **Execute**: Output the SQL in a code block.
+4.  **Execute**: Use read-only SELECT/CTE queries through the `run_sql` tool. Never attempt data or schema mutations.
 5.  **Synthesize**: Interpret the results for the user. Be concise but insightful.
 
 ### SQL BEST PRACTICES (SQLite)
@@ -280,7 +280,7 @@ def chat():
         Your mission is to empower users with deep insights, precise data manipulation, and automated reporting.
         
         ### CURRENT DATABASE CONTEXT
-        You are connected to the SQLite database: '{database_name}'
+        You are connected to the SQLite database: '{database_name}'. The run_sql tool is read-only; use SELECT/CTE and safe schema inspection only. Do not attempt mutations.
         
         ### ACTUAL DATABASE SCHEMA (Do not hallucinate others)
         {schema_summary}
@@ -289,7 +289,7 @@ def chat():
         1.  **Analyze**: Understand the user's intent.
         2.  **Explore**: The schema is provided above. USE IT. Do not assume tables exist.
         3.  **Plan**: Formulate the correct SQLite query.
-        4.  **Execute**: Use `run_sql`.
+        4.  **Execute**: Use `run_sql` for read-only SELECT/CTE queries only. Never mutate the database.
         5.  **Synthesize**: Interpret the results.
         
         ### TOOLS
