@@ -61,7 +61,7 @@ python -m venv .venv
 # macOS / Linux
 source .venv/bin/activate
 
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 Create a local environment file:
@@ -107,6 +107,7 @@ For production, deploy the frontend and backend with compatible API routing. The
 | --- | --- |
 | `GOOGLE_API_KEY` | Google Gemini API credential |
 | `NEXUS_SECRET_KEY` | Persistent Flask session-signing secret |
+| `CORS_ORIGINS` | Comma-separated allowed frontend origins |
 | `PYTHON_VERSION` | Python runtime used by the Render service |
 
 Set secrets through the host's environment/secret manager. Never commit `.env` or paste API keys into source files.
@@ -139,6 +140,7 @@ The exact request and response contracts are implemented in `app.py`.
 Install test dependencies if not already present, then run:
 
 ```bash
+pip install -r requirements-dev.txt
 pytest -q
 ```
 
