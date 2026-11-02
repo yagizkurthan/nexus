@@ -9,15 +9,24 @@ load_dotenv()
 from datetime import datetime
 import google.generativeai as genai
 import json
-from db_manager import list_databases, create_database, list_tables, execute_sql, replace_table
+from db_manager import list_databases, create_database, list_tables, execute_sql, execute_readonly_sql, replace_table
 from rag_manager import RAGManager
 
 # Initialize RAG
 rag = RAGManager()
 
 app = Flask(__name__)
-CORS(app) # Enable CORS for all routes
-app.secret_key = os.urandom(24)
+# Permit local Vite development by default; add deployed frontend origins via CORS_ORIGINS.
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+CORS(app, resources={r"/api/*": {"origins": cors_origins}})
+# Keep Flask sessions stable across restarts; never generate a different key per process.
+app.secret_key = os.getenv("NEXUS_SECRET_KEY")
+if not app.secret_key:
+    raise RuntimeError("NEXUS_SECRET_KEY must be set in the environment")
 
 # Configure Gemini
 # Configure Gemini with Multi-Key Support
@@ -74,7 +83,7 @@ You are Nexus, an elite AI Data Analyst and Database Architect.
 Your mission is to empower users with deep insights, precise data manipulation, and automated reporting.
 
 ### CORE CAPABILITIES
-You have direct access to a **SQLite** database. You can and MUST execute SQL queries to answer questions.
+You have read-only access to a **SQLite** database through the `run_sql` tool. Use SELECT, WITH, and safe schema-inspection PRAGMA statements only. Never attempt INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, ATTACH, or other data/schema modifications.
 Do not ask the user for data if you can query it yourself.
 
 ### OPERATIONAL PROTOCOL (ReAct)
@@ -84,7 +93,7 @@ Do not ask the user for data if you can query it yourself.
     *   *Dates*: SQLite stores dates as strings (YYYY-MM-DD). Use `strftime` for extractions (e.g., `strftime('%Y', date_col)`).
     *   *Matching*: Use `LIKE '%term%'` for fuzzy search. `COLLATE NOCASE` for case-insensitive comparison.
     *   *Limits*: Always use `LIMIT` for large tables unless aggregating.
-4.  **Execute**: Output the SQL in a code block.
+4.  **Execute**: Use read-only SELECT/CTE queries through the `run_sql` tool. Never attempt data or schema mutations.
 5.  **Synthesize**: Interpret the results for the user. Be concise but insightful.
 
 ### SQL BEST PRACTICES (SQLite)
@@ -271,7 +280,7 @@ def chat():
         Your mission is to empower users with deep insights, precise data manipulation, and automated reporting.
         
         ### CURRENT DATABASE CONTEXT
-        You are connected to the SQLite database: '{database_name}'
+        You are connected to the SQLite database: '{database_name}'. The run_sql tool is read-only; use SELECT/CTE and safe schema inspection only. Do not attempt mutations.
         
         ### ACTUAL DATABASE SCHEMA (Do not hallucinate others)
         {schema_summary}
@@ -280,7 +289,7 @@ def chat():
         1.  **Analyze**: Understand the user's intent.
         2.  **Explore**: The schema is provided above. USE IT. Do not assume tables exist.
         3.  **Plan**: Formulate the correct SQLite query.
-        4.  **Execute**: Use `run_sql`.
+        4.  **Execute**: Use `run_sql` for read-only SELECT/CTE queries only. Never mutate the database.
         5.  **Synthesize**: Interpret the results.
         
         ### TOOLS
@@ -352,7 +361,7 @@ def chat():
                             sql_executed = fn_args.get('sql')
                             if 'database' not in fn_args:
                                 fn_args['database'] = database_name
-                            result = execute_sql(fn_args['database'], fn_args['sql'])
+                            result = execute_readonly_sql(fn_args['database'], fn_args['sql'])
                             function_result = result
                             
                             # Process result for summary

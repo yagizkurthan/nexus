@@ -8,9 +8,22 @@ if not os.path.exists(DB_DIR):
 
 
 def db_path(name: str) -> str:
-    if not name.endswith('.db'):
+    """Return a database path constrained to DB_DIR; reject path traversal."""
+    from pathlib import Path
+
+    if not isinstance(name, str):
+        raise ValueError("database name must be a string")
+    name = name.strip()
+    if not name or name in {".", ".."} or "/" in name or "\\" in name:
+        raise ValueError("invalid database name")
+    if not name.endswith(".db"):
         name = f"{name}.db"
-    return os.path.join(DB_DIR, name)
+
+    root = Path(DB_DIR).resolve()
+    candidate = (root / name).resolve()
+    if candidate.parent != root:
+        raise ValueError("database path must remain inside the database directory")
+    return str(candidate)
 
 
 def list_databases() -> List[str]:
@@ -176,5 +189,36 @@ def delete_table(db_name: str, table_name: str) -> Dict[str, Any]:
         return {"status": "deleted", "table": table_name}
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        conn.close()
+
+
+def execute_readonly_sql(db_name: str, sql: str, params: List[Any] = None) -> Dict[str, Any]:
+    """Execute one read-only SQL statement for the AI tool without granting write access."""
+    from pathlib import Path
+
+    path = Path(db_path(db_name)).resolve()
+    if not path.is_file():
+        return {"error": "db_not_found"}
+
+    # SQLite URI mode=ro prevents writes even if the model emits DML/DDL.
+    uri = path.as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA query_only = ON")
+        cur = conn.cursor()
+        if params:
+            cur.execute(sql, params)
+        else:
+            cur.execute(sql)
+
+        if cur.description is None:
+            return {"error": "read_only_query_required"}
+        rows = cur.fetchall()
+        columns = [column[0] for column in cur.description]
+        return {"rows": [dict(row) for row in rows], "columns": columns}
+    except sqlite3.Error as exc:
+        return {"error": str(exc)}
     finally:
         conn.close()

@@ -5,7 +5,7 @@ from google.generativeai.types import FunctionDeclaration, Tool
 
 run_sql_func = FunctionDeclaration(
     name="run_sql",
-    description="Execute a SQL query against the SQLite database. Use this to retrieve data.",
+    description="Execute one read-only SQLite query (SELECT, CTE, or safe schema inspection). Data and schema modifications are not permitted.",
     parameters={
         "type": "object",
         "properties": {

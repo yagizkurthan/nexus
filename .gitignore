@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.pyc
@@ -21,3 +23,6 @@ build/
 databases/
 memory.json
 debug_log.txt
+
+# Logs and generated runtime files
+*.log
