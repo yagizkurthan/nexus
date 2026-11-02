@@ -9,7 +9,7 @@ load_dotenv()
 from datetime import datetime
 import google.generativeai as genai
 import json
-from db_manager import list_databases, create_database, list_tables, execute_sql, replace_table
+from db_manager import list_databases, create_database, list_tables, execute_sql, execute_readonly_sql, replace_table
 from rag_manager import RAGManager
 
 # Initialize RAG
@@ -17,7 +17,10 @@ rag = RAGManager()
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for all routes
-app.secret_key = os.urandom(24)
+# Keep Flask sessions stable across restarts; never generate a different key per process.
+app.secret_key = os.getenv("NEXUS_SECRET_KEY")
+if not app.secret_key:
+    raise RuntimeError("NEXUS_SECRET_KEY must be set in the environment")
 
 # Configure Gemini
 # Configure Gemini with Multi-Key Support
@@ -352,7 +355,7 @@ def chat():
                             sql_executed = fn_args.get('sql')
                             if 'database' not in fn_args:
                                 fn_args['database'] = database_name
-                            result = execute_sql(fn_args['database'], fn_args['sql'])
+                            result = execute_readonly_sql(fn_args['database'], fn_args['sql'])
                             function_result = result
                             
                             # Process result for summary
