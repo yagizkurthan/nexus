@@ -128,7 +128,7 @@ The exact request and response contracts are implemented in `app.py`.
 
 ## Security and data-handling notes
 
-- The AI function-calling SQL path is intended to be read-only. Database-changing operations should go through explicit application endpoints and user-authorized workflows.
+- The AI function-calling SQL path is read-only and opens SQLite in read-only mode. Database-changing operations should go through explicit application endpoints and user-authorized workflows. Database names are constrained to the configured local database directory.
 - Do not expose the Flask development server directly to the public internet.
 - Configure authentication and authorization before exposing database-management endpoints to untrusted users.
 - Restrict CORS to known frontend origins when the frontend is hosted separately.
