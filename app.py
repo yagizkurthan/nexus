@@ -16,7 +16,13 @@ from rag_manager import RAGManager
 rag = RAGManager()
 
 app = Flask(__name__)
-CORS(app) # Enable CORS for all routes
+# Permit local Vite development by default; add deployed frontend origins via CORS_ORIGINS.
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 # Keep Flask sessions stable across restarts; never generate a different key per process.
 app.secret_key = os.getenv("NEXUS_SECRET_KEY")
 if not app.secret_key:
